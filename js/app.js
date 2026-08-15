@@ -14,6 +14,8 @@ const app = document.querySelector('#app');
 const startup = document.querySelector('#startup');
 let installPrompt = null;
 let syncState = { state: 'local', message: 'Local' };
+let availableUpdateVersion = null;
+let lastUpdateCheckAt = 0;
 
 function toast(message, kind = '') {
   const root = document.querySelector('#toast-root');
@@ -22,6 +24,69 @@ function toast(message, kind = '') {
   node.textContent = message;
   root.appendChild(node);
   setTimeout(() => node.remove(), 3600);
+}
+
+function mountUpdateBanner(version) {
+  availableUpdateVersion = version;
+  let banner = document.querySelector('#app-update-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'app-update-banner';
+    banner.className = 'update-banner';
+    const topbar = document.querySelector('.topbar');
+    if (!topbar) return;
+    topbar.insertAdjacentElement('afterend', banner);
+  }
+  banner.innerHTML = `
+    <div class="update-banner-inner" role="status">
+      <div class="update-banner-copy">
+        <strong>Nueva actualización disponible · v${version}</strong>
+        <span>Instálala para usar la versión más reciente de GymLedger.</span>
+      </div>
+      <button class="btn primary small" id="apply-app-update" type="button">Actualizar ahora</button>
+    </div>`;
+  banner.querySelector('#apply-app-update')?.addEventListener('click', applyAppUpdate);
+}
+
+async function applyAppUpdate() {
+  const button = document.querySelector('#apply-app-update');
+  if (button) { button.disabled = true; button.textContent = 'Actualizando…'; }
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration?.();
+    if (registration) await registration.update();
+  } catch (error) {
+    console.warn('No se pudo forzar la comprobación del service worker:', error);
+  }
+  const next = new URL(location.href);
+  next.searchParams.set('v', availableUpdateVersion || Date.now().toString());
+  setTimeout(() => location.replace(next.toString()), 450);
+}
+
+function isNewerVersion(candidate, current) {
+  const a = String(candidate).split('.').map(part => Number.parseInt(part, 10) || 0);
+  const b = String(current).split('.').map(part => Number.parseInt(part, 10) || 0);
+  const length = Math.max(a.length, b.length);
+  for (let i = 0; i < length; i += 1) {
+    const av = a[i] || 0, bv = b[i] || 0;
+    if (av > bv) return true;
+    if (av < bv) return false;
+  }
+  return false;
+}
+
+async function checkForAppUpdate({ force = false } = {}) {
+  if (['localhost', '127.0.0.1'].includes(location.hostname) || !navigator.onLine) return;
+  const now = Date.now();
+  if (!force && now - lastUpdateCheckAt < 60_000) return;
+  lastUpdateCheckAt = now;
+  try {
+    const response = await fetch(`./VERSION.txt?check=${now}`, { cache: 'no-store' });
+    if (!response.ok) return;
+    const remoteVersion = (await response.text()).trim();
+    if (remoteVersion && isNewerVersion(remoteVersion, APP_VERSION)) mountUpdateBanner(remoteVersion);
+  } catch (error) {
+    // Estar offline o perder la red no debe interrumpir la aplicación.
+  }
 }
 
 function modal({ title, body, actions = [] }) {
@@ -110,6 +175,7 @@ function shell() {
         </div>
       </nav>
     </div>`;
+  if (availableUpdateVersion) mountUpdateBanner(availableUpdateVersion);
   document.querySelector('#sync-pill')?.addEventListener('click', async () => {
     try {
       const result = await syncAll();
@@ -181,13 +247,22 @@ async function boot() {
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; });
 
   if ('serviceWorker' in navigator && !['localhost','127.0.0.1'].includes(location.hostname)) {
-    navigator.serviceWorker.register('./service-worker.js').catch(error => console.warn('Service worker:', error));
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(registration => registration.update().catch(() => {}))
+      .catch(error => console.warn('Service worker:', error));
   }
 
   await renderRoute();
   const configured = await cloudIsConfigured();
   const session = configured ? await currentSession() : null;
   if (session) await syncAll({ silent: true }).then(renderRoute);
+
+  if (!['localhost','127.0.0.1'].includes(location.hostname)) {
+    setTimeout(() => checkForAppUpdate({ force: true }), 900);
+    window.addEventListener('focus', () => checkForAppUpdate());
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForAppUpdate(); });
+    setInterval(() => checkForAppUpdate(), 15 * 60 * 1000);
+  }
 }
 
 boot().catch(error => {
