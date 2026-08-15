@@ -1,0 +1,11 @@
+GYMLEDGER 2.0.4 · PUBLICACIÓN
+
+1. El proyecto compartido de Supabase ya fue configurado con supabase/setup.sql y probado.
+2. La Project URL y la Publishable Key ya vienen incorporadas en js/cloud-config.js.
+3. En un dispositivo nuevo no hace falta pegarlas: abre GymLedger e inicia sesión con la cuenta existente.
+4. Usa el ZIP separado GymLedger_2.0.4_GitHub_Pages.zip.
+5. Sube EL CONTENIDO del ZIP a la raíz del repositorio (index.html debe quedar en la raíz).
+6. GitHub Pages: Deploy from a branch → main → /(root).
+7. Abre la URL con Internet al menos una vez para cargar el shell y registrar el service worker.
+8. Instala desde el navegador en móvil/ordenador.
+9. Prueba en producción: iniciar sesión, recibir los 23 ejercicios actuales, abrir sin red, crear/editar, cerrar, reabrir sin red, reconectar y sincronizar.
