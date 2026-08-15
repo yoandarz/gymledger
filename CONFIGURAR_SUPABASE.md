@@ -1,4 +1,4 @@
-# Configurar Supabase · GymLedger 2.0.4
+# Configurar Supabase · GymLedger 2.0.5
 
 ## Estado actual
 

@@ -86,7 +86,8 @@ export function clampInt(value, min, max, fallback) {
 
 export function numberOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
-  const num = Number(value);
+  const normalized = typeof value === 'string' ? value.trim().replace(',', '.') : value;
+  const num = Number(normalized);
   return Number.isFinite(num) ? num : null;
 }
 

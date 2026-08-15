@@ -41,7 +41,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
 
   ctx.root.innerHTML=`
     <div class="page-head"><div><h1>${existing?'Sesión':'Nueva sesión'} · ${escapeHtml(session.routineNameSnapshot||routine?.name||'')}</h1><p>${existing?'Puedes corregir un registro histórico.':'Los valores empiezan desde la última referencia conocida; cambia solo lo que realmente hiciste.'}</p></div></div>
-    <form id="session-form" class="card flat">
+    <form id="session-form" class="card flat" autocomplete="off">
       <div class="form-grid"><label>Fecha y hora<input name="performedAt" type="datetime-local"></label><label>Notas<input name="notes" value="${escapeHtml(session.notes||'')}"></label></div>
       <div class="form-section"><h3>Ejercicios</h3><div id="session-entries"></div></div>
       <div class="form-actions">${existing?'<button type="button" class="btn danger" id="delete-session">Eliminar sesión</button>':''}<a class="btn" href="#sessions">Cancelar</a><button class="btn primary" type="submit">Guardar sesión</button></div>
@@ -61,7 +61,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     const displayValue=weighted && entry.loadValue!=null ? kgToUnit(entry.loadValue,unit) : entry.loadValue;
     const label=entry.loadMode==='bodyweight_plus_kg'?'Carga añadida':entry.loadMode==='time_seconds'?'Segundos':entry.loadMode==='untracked'?'Sin carga':'Carga';
     const unitSelect=weighted?`<select class="entry-unit" data-previous="${unit}">${WEIGHT_UNITS.map(item=>`<option value="${item.value}" ${unit===item.value?'selected':''}>${item.value}</option>`).join('')}</select>`:'';
-    return `<div class="session-entry" data-index="${index}"><div class="entry-name"><strong>${escapeHtml(ex?.name||entry.exerciseNameSnapshot)}</strong><small>${escapeHtml(ex?.exerciseCode||entry.exerciseCodeSnapshot||'')} · ${escapeHtml(formatLoad(ex||entry,{withBasis:true}))}</small></div><label>${label}<div class="load-with-unit"><input class="entry-load" type="number" step="0.01" ${isBody||entry.loadMode==='untracked'?'disabled':''} value="${displayValue??(entry.loadMode==='bodyweight_plus_kg'?0:'')}">${unitSelect}</div></label><label class="sets">Series<input class="entry-sets" type="number" min="1" max="30" value="${entry.sets??3}"></label><label class="reps">Reps<input class="entry-reps" type="number" min="1" max="200" value="${entry.reps??12}"></label></div>`;
+    return `<div class="session-entry" data-index="${index}"><div class="entry-name"><strong>${escapeHtml(ex?.name||entry.exerciseNameSnapshot)}</strong><small>${escapeHtml(ex?.exerciseCode||entry.exerciseCodeSnapshot||'')} · ${escapeHtml(formatLoad(ex||entry,{withBasis:true}))}</small></div><label>${label}<div class="load-with-unit"><input class="entry-load" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[0-9]*[\.,]?[0-9]*" ${isBody||entry.loadMode==='untracked'?'disabled':''} value="${displayValue??(entry.loadMode==='bodyweight_plus_kg'?0:'')}">${unitSelect}</div></label><label class="sets">Series<input class="entry-sets" type="number" min="1" max="30" value="${entry.sets??3}"></label><label class="reps">Reps<input class="entry-reps" type="number" min="1" max="200" value="${entry.reps??12}"></label></div>`;
   }).join('');
 
   entriesRoot.querySelectorAll('.entry-unit').forEach(select=>select.addEventListener('change',()=>{
