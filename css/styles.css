@@ -246,3 +246,16 @@ label small { font-weight:500; color:var(--muted); }
   .update-banner-inner { align-items:flex-start; flex-direction:column; }
   .update-banner-inner .btn { width:100%; }
 }
+
+/* 2.0.7 · imagen del ejercicio dentro de una sesión activa */
+.entry-title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.entry-title-row strong { min-width:0; }
+.entry-image-button { flex:0 0 auto; white-space:nowrap; }
+.entry-image-missing { flex:0 0 auto; opacity:.7; }
+.session-image-preview { display:grid; place-items:center; min-height:180px; background:var(--surface-2); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+.session-image-preview img { display:block; max-width:100%; width:100%; height:auto; max-height:68vh; object-fit:contain; }
+@media (max-width:620px) {
+  .entry-title-row { align-items:flex-start; }
+  .entry-image-button { min-height:34px; }
+  .session-image-preview img { max-height:72vh; }
+}

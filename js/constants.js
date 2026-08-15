@@ -1,5 +1,5 @@
 export const APP_NAME = 'GymLedger';
-export const APP_VERSION = '2.0.6';
+export const APP_VERSION = '2.0.7';
 export const DB_NAME = 'gymledger-db';
 export const DB_VERSION = 1;
 export const STORES = {

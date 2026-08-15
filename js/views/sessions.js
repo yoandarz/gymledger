@@ -61,8 +61,25 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     const displayValue=weighted && entry.loadValue!=null ? kgToUnit(entry.loadValue,unit) : entry.loadValue;
     const label=entry.loadMode==='bodyweight_plus_kg'?'Carga añadida':entry.loadMode==='time_seconds'?'Segundos':entry.loadMode==='untracked'?'Sin carga':'Carga';
     const unitSelect=weighted?`<select class="entry-unit" data-previous="${unit}">${WEIGHT_UNITS.map(item=>`<option value="${item.value}" ${unit===item.value?'selected':''}>${item.value}</option>`).join('')}</select>`:'';
-    return `<div class="session-entry" data-index="${index}"><div class="entry-name"><strong>${escapeHtml(ex?.name||entry.exerciseNameSnapshot)}</strong><small>${escapeHtml(ex?.exerciseCode||entry.exerciseCodeSnapshot||'')} · ${escapeHtml(formatLoad(ex||entry,{withBasis:true}))}</small></div><label class="load-field">${label}<div class="load-with-unit ${weighted?'':'single'}"><input class="entry-load" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[0-9]*[\.,]?[0-9]*" ${isBody||entry.loadMode==='untracked'?'disabled':''} value="${displayValue??(entry.loadMode==='bodyweight_plus_kg'?0:'')}">${unitSelect}</div></label><label class="sets">Series<input class="entry-sets" type="number" min="1" max="30" value="${entry.sets??3}"></label><label class="reps">Reps<input class="entry-reps" type="number" min="1" max="200" value="${entry.reps??12}"></label></div>`;
+    const imageControl=ex?.imageDataUrl
+      ? `<button type="button" class="btn small entry-image-button" aria-label="Ver imagen de ${escapeHtml(ex.name)}">Ver imagen</button>`
+      : '<span class="badge entry-image-missing">Sin imagen</span>';
+    return `<div class="session-entry" data-index="${index}"><div class="entry-name"><div class="entry-title-row"><strong>${escapeHtml(ex?.name||entry.exerciseNameSnapshot)}</strong>${imageControl}</div><small>${escapeHtml(ex?.exerciseCode||entry.exerciseCodeSnapshot||'')} · ${escapeHtml(formatLoad(ex||entry,{withBasis:true}))}</small></div><label class="load-field">${label}<div class="load-with-unit ${weighted?'':'single'}"><input class="entry-load" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[0-9]*[\.,]?[0-9]*" ${isBody||entry.loadMode==='untracked'?'disabled':''} value="${displayValue??(entry.loadMode==='bodyweight_plus_kg'?0:'')}">${unitSelect}</div></label><label class="sets">Series<input class="entry-sets" type="number" min="1" max="30" value="${entry.sets??3}"></label><label class="reps">Reps<input class="entry-reps" type="number" min="1" max="200" value="${entry.reps??12}"></label></div>`;
   }).join('');
+
+  entriesRoot.querySelectorAll('.entry-image-button').forEach(button=>button.addEventListener('click',()=>{
+    const row=button.closest('.session-entry');
+    const entry=session.entries[Number(row?.dataset.index)];
+    const ex=entry ? exMap.get(entry.exerciseId) : null;
+    if(!ex?.imageDataUrl){ ctx.toast('Este ejercicio no tiene imagen guardada.','error'); return; }
+    const body=document.createElement('div');
+    body.className='session-image-preview';
+    const img=document.createElement('img');
+    img.src=ex.imageDataUrl;
+    img.alt=ex.imageAlt || ex.name || 'Ilustración del ejercicio';
+    body.appendChild(img);
+    ctx.modal({title:ex.name||'Ejercicio',body,actions:[{label:'Volver a la sesión',value:null,className:'primary'}]});
+  }));
 
   entriesRoot.querySelectorAll('.entry-unit').forEach(select=>select.addEventListener('change',()=>{
     const row=select.closest('.session-entry');

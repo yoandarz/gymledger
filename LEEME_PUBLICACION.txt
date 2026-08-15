@@ -1,13 +1,13 @@
-GYMLEDGER 2.0.6 · PUBLICACIÓN
+GYMLEDGER 2.0.7 · PUBLICACIÓN
 
 1. El proyecto compartido de Supabase ya fue configurado con supabase/setup.sql y probado.
 2. La Project URL y la Publishable Key ya vienen incorporadas en js/cloud-config.js.
 3. En un dispositivo nuevo no hace falta pegarlas: abre GymLedger e inicia sesión con la cuenta existente.
-4. Usa el ZIP separado GymLedger_2.0.6_GitHub_Pages.zip.
+4. Usa el ZIP separado GymLedger_2.0.7_GitHub_Pages.zip.
 5. Sube EL CONTENIDO del ZIP a la raíz del repositorio (index.html debe quedar en la raíz).
 6. GitHub Pages: Deploy from a branch → main → /(root).
 7. Abre la URL con Internet al menos una vez para cargar el shell y registrar el service worker.
 8. Instala desde el navegador en móvil/ordenador.
 9. Prueba en producción: iniciar sesión, recibir los 23 ejercicios actuales, abrir sin red, crear/editar, cerrar, reabrir sin red, reconectar y sincronizar.
 
-10. Para esta transición concreta desde 2.0.5, cierra/reabre o recarga una vez la PWA instalada. A partir de 2.0.6, las versiones nuevas se anuncian dentro de la app con «Actualizar ahora».
+10. Como 2.0.6 ya incluye el detector de actualizaciones, al publicar 2.0.7 debe aparecer dentro de la app el aviso «Nueva actualización disponible» con el botón «Actualizar ahora».
