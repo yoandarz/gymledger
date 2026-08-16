@@ -1,13 +1,12 @@
-GYMLEDGER 2.0.7 · PUBLICACIÓN
+GYMLEDGER 2.0.8 · PUBLICACIÓN
 
-1. El proyecto compartido de Supabase ya fue configurado con supabase/setup.sql y probado.
-2. La Project URL y la Publishable Key ya vienen incorporadas en js/cloud-config.js.
-3. En un dispositivo nuevo no hace falta pegarlas: abre GymLedger e inicia sesión con la cuenta existente.
-4. Usa el ZIP separado GymLedger_2.0.7_GitHub_Pages.zip.
-5. Sube EL CONTENIDO del ZIP a la raíz del repositorio (index.html debe quedar en la raíz).
-6. GitHub Pages: Deploy from a branch → main → /(root).
-7. Abre la URL con Internet al menos una vez para cargar el shell y registrar el service worker.
-8. Instala desde el navegador en móvil/ordenador.
-9. Prueba en producción: iniciar sesión, recibir los 23 ejercicios actuales, abrir sin red, crear/editar, cerrar, reabrir sin red, reconectar y sincronizar.
-
-10. Como 2.0.6 ya incluye el detector de actualizaciones, al publicar 2.0.7 debe aparecer dentro de la app el aviso «Nueva actualización disponible» con el botón «Actualizar ahora».
+1. El proyecto compartido de Supabase ya está configurado; 2.0.8 no requiere ejecutar SQL nuevo.
+2. La Project URL y la Publishable Key siguen incorporadas en js/cloud-config.js.
+3. Usa el ZIP separado GymLedger_2.0.8_GitHub_Pages.zip.
+4. Sube EL CONTENIDO del ZIP a la raíz del repositorio (index.html debe quedar en la raíz).
+5. GitHub Pages: Deploy from a branch → main → /(root).
+6. La app 2.0.7 debe detectar VERSION.txt=2.0.8 y mostrar «Nueva actualización disponible»; pulsa «Actualizar ahora».
+7. Comprueba que la cabecera muestra v2.0.8.
+8. Prueba en móvil una sesión real: cambia cargas, marca ejercicios como Hecho, intenta salir, vuelve a entrar y confirma que hora/progreso/valores sobreviven.
+9. Comprueba Cancelar sesión (borra borrador) y Guardar sesión (crea historial, actualiza referencias y elimina borrador).
+10. Verifica login, sincronización normal y apertura offline. El borrador activo es local y no se envía a Supabase hasta guardar la sesión histórica.

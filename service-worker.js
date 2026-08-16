@@ -1,7 +1,7 @@
-const CACHE_NAME = 'gymledger-shell-v2.0.7';
+const CACHE_NAME = 'gymledger-shell-v2.0.8';
 const SHELL = [
   './','./index.html','./offline.html','./manifest.webmanifest','./css/styles.css',
-  './js/app.js','./js/constants.js','./js/utils.js','./js/db.js','./js/schema.js','./js/seed-data.js','./js/exercise-catalog.js',
+  './js/app.js','./js/constants.js','./js/utils.js','./js/db.js','./js/session-draft.js','./js/schema.js','./js/seed-data.js','./js/exercise-catalog.js',
   './js/auth.js','./js/cloud-config.js','./js/cloud.js','./js/sync.js','./js/gym-service.js','./js/import-export.js',
   './js/views/home.js','./js/views/exercises.js','./js/views/routines.js','./js/views/plans.js','./js/views/sessions.js','./js/views/settings.js',
   './VERSION.txt','./assets/icons/icon-96.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png','./assets/icons/icon-maskable-192.png','./assets/icons/icon-maskable-512.png'

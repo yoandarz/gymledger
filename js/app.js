@@ -16,6 +16,9 @@ let installPrompt = null;
 let syncState = { state: 'local', message: 'Local' };
 let availableUpdateVersion = null;
 let lastUpdateCheckAt = 0;
+let navigationGuard = null;
+let acceptedHash = location.hash || '#home';
+let guardDialogOpen = false;
 
 function toast(message, kind = '') {
   const root = document.querySelector('#toast-root');
@@ -89,7 +92,7 @@ async function checkForAppUpdate({ force = false } = {}) {
   }
 }
 
-function modal({ title, body, actions = [] }) {
+function modal({ title, body, actions = [], dismissible = true }) {
   return new Promise(resolve => {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -107,7 +110,7 @@ function modal({ title, body, actions = [] }) {
       actionsRoot.appendChild(button);
     });
     backdrop.addEventListener('click', event => {
-      if (event.target === backdrop) { backdrop.remove(); resolve(null); }
+      if (dismissible && event.target === backdrop) { backdrop.remove(); resolve(null); }
     });
     backdrop.appendChild(box);
     document.body.appendChild(backdrop);
@@ -133,8 +136,45 @@ function parseRoute() {
   return { page: parts[0] || 'home', id: parts[1] || null, query: new URLSearchParams(queryPart || '') };
 }
 
+function normalizeTargetHash(target) {
+  const value = String(target || '#home');
+  return value.startsWith('#') ? value : `#${value}`;
+}
+
+function setNavigationGuard(handler) {
+  navigationGuard = typeof handler === 'function' ? handler : null;
+}
+
+function clearNavigationGuard() {
+  navigationGuard = null;
+}
+
+async function requestNavigation(target) {
+  const targetHash = normalizeTargetHash(target);
+  const currentHash = location.hash || '#home';
+  if (targetHash === currentHash) return true;
+  if (!navigationGuard) {
+    location.hash = targetHash;
+    return true;
+  }
+  if (guardDialogOpen) return false;
+  guardDialogOpen = true;
+  let allowed = false;
+  try {
+    allowed = await navigationGuard({ from: acceptedHash, to: targetHash });
+  } catch (error) {
+    console.error('Protección de navegación:', error);
+  } finally {
+    guardDialogOpen = false;
+  }
+  if (!allowed) return false;
+  navigationGuard = null;
+  location.hash = targetHash;
+  return true;
+}
+
 function navigate(target) {
-  location.hash = target.startsWith('#') ? target : `#${target}`;
+  void requestNavigation(target);
 }
 
 async function applyTheme() {
@@ -187,11 +227,11 @@ function shell() {
 function viewContext() {
   return {
     root: document.querySelector('#view'),
-    route: parseRoute(), navigate, toast, modal, confirmDialog,
+    route: parseRoute(), navigate, toast, modal, confirmDialog, setNavigationGuard, clearNavigationGuard,
     rerender: renderRoute,
-    afterWrite: async ({ sync = true } = {}) => {
+    afterWrite: async ({ sync = true, render = true } = {}) => {
       if (sync) await syncAfterWrite();
-      await renderRoute();
+      if (render) await renderRoute();
     },
     getInstallPrompt: () => installPrompt,
     clearInstallPrompt: () => { installPrompt = null; },
@@ -241,7 +281,30 @@ async function boot() {
     }
   });
 
-  window.addEventListener('hashchange', renderRoute);
+  window.addEventListener('hashchange', async () => {
+    const requestedHash = location.hash || '#home';
+    if (navigationGuard && requestedHash !== acceptedHash) {
+      const previousHash = acceptedHash;
+      history.replaceState(null, '', previousHash);
+      const allowed = await requestNavigation(requestedHash);
+      if (!allowed && (location.hash || '#home') !== previousHash) history.replaceState(null, '', previousHash);
+      return;
+    }
+    acceptedHash = requestedHash;
+    await renderRoute();
+  });
+  document.addEventListener('click', event => {
+    if (!navigationGuard || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.target.closest?.('a[href^="#"]');
+    if (!link) return;
+    event.preventDefault();
+    void requestNavigation(link.getAttribute('href'));
+  }, true);
+  window.addEventListener('beforeunload', event => {
+    if (!navigationGuard) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
   window.addEventListener('online', () => syncAll({ silent: true }).then(renderRoute));
   window.addEventListener('offline', () => { syncState = { state: 'offline', message: 'Sin conexión' }; shell(); renderRoute(); });
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; });

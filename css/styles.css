@@ -259,3 +259,43 @@ label small { font-weight:500; color:var(--muted); }
   .entry-image-button { min-height:34px; }
   .session-image-preview img { max-height:72vh; }
 }
+
+/* 2.0.8 · borrador persistente, protección de salida y checklist de sesión */
+.active-session-card {
+  border-color:color-mix(in srgb,var(--success) 38%,var(--line));
+  background:color-mix(in srgb,var(--success) 7%,var(--surface));
+}
+.active-session-status {
+  display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  margin-bottom:16px; padding:11px 12px; border:1px solid color-mix(in srgb,var(--success) 34%,var(--line));
+  border-radius:12px; background:color-mix(in srgb,var(--success) 7%,var(--surface-2));
+}
+.active-session-status > div { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.session-section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.session-entry {
+  border-radius:12px; padding-left:8px; padding-right:8px;
+  transition:background .16s ease,border-color .16s ease,box-shadow .16s ease;
+}
+.session-entry.completed {
+  background:color-mix(in srgb,var(--success) 9%,var(--surface));
+  box-shadow:inset 3px 0 0 color-mix(in srgb,var(--success) 78%,transparent);
+}
+.entry-title-with-check { display:flex; align-items:center; gap:9px; min-width:0; }
+.entry-title-with-check strong { min-width:0; }
+.entry-complete-toggle {
+  display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; min-height:34px;
+  border:1px solid var(--line); border-radius:999px; padding:5px 9px;
+  background:var(--surface-2); color:var(--muted); font-weight:800; font-size:.76rem;
+}
+.entry-complete-toggle.completed {
+  border-color:color-mix(in srgb,var(--success) 58%,var(--line));
+  background:color-mix(in srgb,var(--success) 12%,var(--surface)); color:var(--success);
+}
+.entry-complete-toggle .check-icon { font-size:1rem; line-height:1; }
+@media (max-width:620px) {
+  .active-session-status { align-items:flex-start; }
+  .active-session-status > strong { width:100%; }
+  .entry-title-row { flex-wrap:wrap; }
+  .entry-title-with-check { width:100%; align-items:flex-start; }
+  .entry-complete-toggle { min-width:88px; justify-content:center; }
+}

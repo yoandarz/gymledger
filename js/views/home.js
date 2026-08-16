@@ -1,4 +1,5 @@
 import { getActivePlanContext, listRecords, setPlanNextRoutine } from '../gym-service.js';
+import { draftProgress, getActiveSessionDraft } from '../session-draft.js';
 import { formatDateTime, formatLoad, escapeHtml } from '../utils.js';
 
 export async function renderHome(ctx) {
@@ -8,12 +9,22 @@ export async function renderHome(ctx) {
   const recent = sessions[0] || null;
   const exercises = await listRecords('exercise');
   const pendingCodes = exercises.filter(ex => !ex.exerciseCode).length;
+  const activeDraft = await getActiveSessionDraft();
+  const activeProgress = draftProgress(activeDraft);
 
   ctx.root.innerHTML = `
     <div class="page-head">
       <div><h1>Entrenar</h1><p>Tu ciclo sigue donde lo dejaste; no depende del calendario.</p></div>
       <div class="page-actions"><a class="btn" href="#sessions?import=1">Importar JSON</a></div>
     </div>
+
+    ${activeDraft ? `
+      <section class="card active-session-card" style="margin-bottom:16px">
+        <div class="kicker">Sesión en curso</div>
+        <h2>${escapeHtml(activeDraft.session.routineNameSnapshot || 'Rutina')}</h2>
+        <p class="muted">Iniciada ${escapeHtml(formatDateTime(activeDraft.startedAt || activeDraft.session.performedAt))} · ${activeProgress.completed}/${activeProgress.total} completados</p>
+        <div class="page-actions" style="margin-top:14px"><a class="btn primary" href="#session-new/${encodeURIComponent(activeDraft.session.routineId)}${activeDraft.session.planId ? `?plan=${encodeURIComponent(activeDraft.session.planId)}` : ''}">Continuar sesión</a></div>
+      </section>` : ''}
 
     ${plan && nextRoutine ? `
       <section class="card hero-plan">
