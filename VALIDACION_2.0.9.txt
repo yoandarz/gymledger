@@ -1,0 +1,20 @@
+GymLedger 2.0.9 · VALIDACIÓN REALIZADA
+
+- Sintaxis JavaScript comprobada con node --check:
+  js/views/sessions.js
+  js/session-draft.js
+  js/sync.js
+  js/constants.js
+  service-worker.js
+
+- Coherencia de versión comprobada:
+  APP_VERSION = 2.0.9
+  VERSION.txt = 2.0.9
+  CACHE_NAME = gymledger-shell-v2.0.9
+  index.html usa query strings v=2.0.9
+  service worker incluye css/session-2.0.9.css
+
+- Comprobaciones estáticas:
+  contador de series presente
+  descanso automático presente
+  rutinas/planes no generan copia por conflicto al resolver divergencia

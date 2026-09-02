@@ -24,8 +24,14 @@ function remoteIsDifferent(local, remote) {
   return remote.server_updated_at !== local._sync.syncedServerUpdatedAt;
 }
 
+function localWinsStructuralConflict(local) {
+  if (!local) return false;
+  if (local.type === 'routine' || local.type === 'plan') return true;
+  return String(local.id || '').startsWith('seed-');
+}
+
 async function preserveConflict(local) {
-  const suffix = local.type === 'exercise' ? ' (copia por conflicto)' : ' (copia por conflicto)';
+  const suffix = ' (copia por conflicto)';
   const conflict = normalizeRecord({
     ...local,
     id: uuid(),
@@ -39,6 +45,24 @@ async function preserveConflict(local) {
   if (conflict.type === 'exercise') conflict.exerciseCode = null;
   await putRecord(conflict);
   return conflict;
+}
+
+async function uploadLocal(local, userId, remote = null) {
+  if (local._sync?.deleted) {
+    if (remote) await softDeleteRemoteRecord(local.id);
+    await removeRecordLocal(local.id);
+    return;
+  }
+  const uploaded = await upsertRemoteRecord(local, userId);
+  // El servidor puede completar exerciseCode mediante trigger.
+  const serverPayload = uploaded?.payload ? normalizeRecord(uploaded.payload) : local;
+  serverPayload._sync = {
+    dirty: false,
+    deleted: false,
+    syncedServerUpdatedAt: uploaded?.server_updated_at || null,
+    seed: false,
+  };
+  await putRecord(serverPayload);
 }
 
 export async function markRecordDirty(record) {
@@ -78,8 +102,6 @@ export async function syncAll({ silent = false } = {}) {
     const localRecords = await getAllRecords({ includeDeleted: true });
     // Los ejercicios iniciales tienen códigos EX reservados. Se sincronizan primero
     // para que cualquier ejercicio nuevo sin código reciba EX-0023 o superior.
-    // Esto evita una colisión en la primera sincronización si el usuario creó
-    // ejercicios locales antes de conectar Supabase.
     const dirtyRecords = localRecords.filter(record => record._sync?.dirty).sort((a, b) => {
       const priority = record => {
         if (record.type === 'exercise' && record.exerciseCode) return 0;
@@ -92,8 +114,17 @@ export async function syncAll({ silent = false } = {}) {
     for (const local of dirtyRecords) {
       const remote = await getRemoteRecord(local.id);
       if (remote && remoteIsDifferent(local, remote)) {
-        // Los datos iniciales deterministas existen en todos los dispositivos.
-        // Si el servidor ya tiene una versión, el servidor gana sin crear duplicados.
+        // Rutinas, planes y registros seed usan identidad estable. Crear una segunda
+        // rutina/plan con "(copia por conflicto)" rompe la estructura y confunde al
+        // usuario. En esos registros gana la edición local que acaba de disparar
+        // esta sincronización y se conserva el mismo id.
+        if (localWinsStructuralConflict(local)) {
+          await uploadLocal(local, session.user.id, remote);
+          continue;
+        }
+
+        // Para otros registros no deterministas se conserva la estrategia prudente:
+        // guardar una copia local antes de aceptar la versión remota.
         if (!local._sync?.seed) await preserveConflict(local);
         if (remote.deleted_at) await removeRecordLocal(local.id);
         else {
@@ -104,21 +135,7 @@ export async function syncAll({ silent = false } = {}) {
         continue;
       }
 
-      if (local._sync?.deleted) {
-        if (remote) await softDeleteRemoteRecord(local.id);
-        await removeRecordLocal(local.id);
-      } else {
-        const uploaded = await upsertRemoteRecord(local, session.user.id);
-        // El servidor puede completar exerciseCode mediante trigger.
-        const serverPayload = uploaded?.payload ? normalizeRecord(uploaded.payload) : local;
-        serverPayload._sync = {
-          dirty: false,
-          deleted: false,
-          syncedServerUpdatedAt: uploaded?.server_updated_at || null,
-          seed: false,
-        };
-        await putRecord(serverPayload);
-      }
+      await uploadLocal(local, session.user.id, remote);
     }
 
     const remoteRows = await listRemoteRecords();

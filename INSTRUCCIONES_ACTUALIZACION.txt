@@ -1,0 +1,18 @@
+GYMLEDGER 2.0.9 · ARCHIVOS DE ACTUALIZACIÓN
+
+Este paquete contiene únicamente los archivos nuevos o sustituidos de la versión 2.0.9.
+
+Cambios:
+1. Contador de series por ejercicio.
+2. Al marcar una serie, comienza automáticamente el descanso salvo en la última.
+3. Descanso editable en minutos y segundos, con aviso sonoro/vibración cuando el navegador lo permite.
+4. El borrador conserva series marcadas y temporizador activo.
+5. En móvil, cada ejercicio aparece como una tarjeta claramente separada.
+6. Un ejercicio se marca verde solo al completar todas sus series.
+7. Corrección de sincronización para que editar rutinas/planes no cree una copia '(copia por conflicto)'.
+8. Actualización coordinada de APP_VERSION, VERSION.txt, service worker y caché PWA.
+
+Instalación:
+- Descomprime este ZIP sobre la carpeta raíz de GymLedger 2.0.8, permitiendo sustituir archivos.
+- Publica después el contenido resultante en la raíz del repositorio GitHub Pages.
+- No borres IndexedDB ni ejecutes SQL nuevo en Supabase.

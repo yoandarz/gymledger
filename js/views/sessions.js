@@ -1,8 +1,12 @@
 import { buildSessionFromRoutine, deleteRecord, getActivePlanContext, getRoutine, getSessionRecord, listRecords, saveSession } from '../gym-service.js';
 import { exampleSessionJson, importSessionJson } from '../import-export.js';
 import { WEIGHT_UNITS } from '../constants.js';
+import { getSetting, setSetting } from '../db.js';
 import { clearActiveSessionDraft, draftProgress, getActiveSessionDraft, saveActiveSessionDraft } from '../session-draft.js';
 import { escapeHtml, formatDateTime, formatLoad, kgToUnit, numberOrNull, safeJsonParse, unitToKg } from '../utils.js';
+
+const DEFAULT_REST_SECONDS = 90;
+let restAudioContext = null;
 
 function sessionRow(session) {
   return `<div class="list-row"><div class="list-main"><strong>${formatDateTime(session.performedAt)} · ${escapeHtml(session.routineNameSnapshot || 'Rutina')}</strong><small>${session.entries.length} ejercicios · ${session.source === 'json' ? 'Importada por JSON' : 'Registro manual'}${session.notes ? ` · ${escapeHtml(session.notes)}` : ''}</small></div><div class="row-actions"><a class="btn small" href="#session-edit/${session.id}">Ver / editar</a></div></div>`;
@@ -23,6 +27,62 @@ function activeDraftCard(draft) {
       <a class="btn primary" href="#session-new/${encodeURIComponent(session.routineId)}${planQuery}">Continuar sesión</a>
     </div>
   </section>`;
+}
+
+function targetSets(entry) {
+  return Math.max(1, Math.min(30, Number(entry?.sets) || 3));
+}
+
+function normalizedSetCounts(input = {}) {
+  const output = {};
+  Object.entries(input || {}).forEach(([key, value]) => {
+    const index = Number(key);
+    const count = Number(value);
+    if (Number.isInteger(index) && index >= 0 && Number.isFinite(count)) {
+      output[index] = Math.max(0, Math.floor(count));
+    }
+  });
+  return output;
+}
+
+function formatCountdown(totalSeconds) {
+  const value = Math.max(0, Math.ceil(Number(totalSeconds) || 0));
+  const minutes = Math.floor(value / 60);
+  const seconds = value % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+async function primeRestAudio() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!restAudioContext) restAudioContext = new AudioContextClass();
+    if (restAudioContext.state === 'suspended') await restAudioContext.resume();
+  } catch {
+    // El sonido es una ayuda; nunca debe bloquear el registro.
+  }
+}
+
+function soundRestFinished() {
+  try {
+    if (!restAudioContext || restAudioContext.state !== 'running') return;
+    const now = restAudioContext.currentTime;
+    [0, 0.22].forEach(offset => {
+      const oscillator = restAudioContext.createOscillator();
+      const gain = restAudioContext.createGain();
+      oscillator.frequency.setValueAtTime(880, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+      oscillator.connect(gain);
+      gain.connect(restAudioContext.destination);
+      oscillator.start(now + offset);
+      oscillator.stop(now + offset + 0.18);
+    });
+  } catch {
+    // Algunos navegadores pueden bloquear audio si perdieron el gesto de usuario.
+  }
+  try { navigator.vibrate?.([120, 80, 120]); } catch { /* opcional */ }
 }
 
 export async function renderSessions(ctx) {
@@ -51,8 +111,12 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
   const existing = sessionId ? await getSessionRecord(sessionId) : null;
   const queryPlanId = ctx.route.query.get('plan') || null;
   let activeDraft = !existing ? await getActiveSessionDraft() : null;
-  let completedIndexes = new Set();
+  let completedSetCounts = {};
   let startedAt = null;
+  let restSecondsTotal = Number(await getSetting('sessionRestSeconds', DEFAULT_REST_SECONDS));
+  if (!Number.isFinite(restSecondsTotal) || restSecondsTotal < 0) restSecondsTotal = DEFAULT_REST_SECONDS;
+  restSecondsTotal = Math.min(3599, Math.floor(restSecondsTotal));
+  let restTimerState = null;
   let session;
 
   if(existing){
@@ -90,8 +154,16 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
 
     if(activeDraft && activeDraft.session.routineId === routineId){
       session={...activeDraft.session,entries:(activeDraft.session.entries||[]).map(e=>({...e}))};
-      completedIndexes=new Set(activeDraft.completedIndexes||[]);
+      completedSetCounts=normalizedSetCounts(activeDraft.completedSetCounts);
+      if(!Object.keys(completedSetCounts).length && Array.isArray(activeDraft.completedIndexes)){
+        activeDraft.completedIndexes.forEach(index=>{
+          const i=Number(index);
+          if(Number.isInteger(i) && session.entries[i]) completedSetCounts[i]=targetSets(session.entries[i]);
+        });
+      }
       startedAt=activeDraft.startedAt || session.performedAt;
+      if(Number.isFinite(Number(activeDraft.restSeconds))) restSecondsTotal=Math.max(0,Math.min(3599,Math.floor(Number(activeDraft.restSeconds))));
+      restTimerState=activeDraft.restTimer?.endsAt ? {...activeDraft.restTimer} : null;
     } else {
       session=await buildSessionFromRoutine(routineId,{planId:queryPlanId});
       startedAt=session.performedAt;
@@ -102,12 +174,40 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
   const exMap=new Map((await listRecords('exercise',{includeArchived:true})).map(ex=>[ex.id,ex]));
   const totalEntries=session.entries.length;
 
+  const initialMinutes=Math.floor(restSecondsTotal/60);
+  const initialSeconds=restSecondsTotal%60;
+
   ctx.root.innerHTML=`
-    <div class="page-head"><div><h1>${existing?'Sesión':'Nueva sesión'} · ${escapeHtml(session.routineNameSnapshot||routine?.name||'')}</h1><p>${existing?'Puedes corregir un registro histórico.':'La sesión se guarda como borrador mientras entrenas. Puedes cambiar el orden de trabajo y marcar cada ejercicio al terminarlo.'}</p></div></div>
+    <div class="page-head"><div><h1>${existing?'Sesión':'Nueva sesión'} · ${escapeHtml(session.routineNameSnapshot||routine?.name||'')}</h1><p>${existing?'Puedes corregir un registro histórico.':'Marca cada serie al terminarla. GymLedger contará las series y controlará automáticamente el descanso.'}</p></div></div>
     <form id="session-form" class="card flat" autocomplete="off">
-      ${existing?'':`<div class="active-session-status"><div><span class="badge ok">Borrador automático</span><strong>Inicio · ${escapeHtml(formatDateTime(startedAt))}</strong></div><strong id="session-progress">0/${totalEntries} completados</strong></div>`}
+      ${existing?'':`
+        <div class="active-session-status">
+          <div><span class="badge ok">Borrador automático</span><strong>Inicio · ${escapeHtml(formatDateTime(startedAt))}</strong></div>
+          <strong id="session-progress">0/${totalEntries} completados</strong>
+        </div>
+        <div class="rest-workflow">
+          <div class="rest-duration-control">
+            <div>
+              <strong>Descanso entre series</strong>
+              <span class="muted small">Empieza al marcar una serie, excepto la última.</span>
+            </div>
+            <div class="rest-duration-fields" aria-label="Duración del descanso">
+              <label><small>min</small><input id="rest-minutes" type="number" inputmode="numeric" min="0" max="59" value="${initialMinutes}"></label>
+              <span>:</span>
+              <label><small>seg</small><input id="rest-seconds" type="number" inputmode="numeric" min="0" max="59" value="${initialSeconds}"></label>
+            </div>
+          </div>
+          <div class="rest-timer-panel" id="rest-timer-panel" hidden>
+            <div>
+              <span class="kicker">Descanso</span>
+              <strong class="rest-timer-value" id="rest-timer-value">0:00</strong>
+              <small id="rest-timer-context"></small>
+            </div>
+            <button type="button" class="btn small" id="cancel-rest-timer">Cancelar</button>
+          </div>
+        </div>`}
       <div class="form-grid"><label>Fecha y hora<input name="performedAt" type="datetime-local"></label><label>Notas<input name="notes" value="${escapeHtml(session.notes||'')}"></label></div>
-      <div class="form-section"><div class="session-section-head"><h3>Ejercicios</h3>${existing?'':'<span class="muted small">Toca ✓ Hecho cuando termines cada ejercicio.</span>'}</div><div id="session-entries"></div></div>
+      <div class="form-section"><div class="session-section-head"><h3>Ejercicios</h3>${existing?'':'<span class="muted small">Cada marcador corresponde a una serie.</span>'}</div><div id="session-entries"></div></div>
       <div class="form-actions">${existing?'<button type="button" class="btn danger" id="delete-session">Eliminar sesión</button>':'<button type="button" class="btn danger" id="cancel-active-session">Cancelar sesión</button>'}<button class="btn primary" type="submit">Guardar sesión</button></div>
     </form>`;
 
@@ -115,6 +215,20 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
   const date=new Date(session.performedAt||Date.now());
   const local=new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16);
   dateInput.value=local;
+
+  const setTrackerHtml=(entry,index)=>{
+    if(existing)return '';
+    const total=targetSets(entry);
+    const done=Math.max(0,Math.min(total,Number(completedSetCounts[index])||0));
+    const chips=Array.from({length:total},(_,offset)=>{
+      const setNumber=offset+1;
+      const completed=setNumber<=done;
+      const next=setNumber===done+1;
+      const disabled=setNumber>done+1;
+      return `<button type="button" class="set-chip ${completed?'done':''} ${next?'next':''}" data-set="${setNumber}" aria-pressed="${completed?'true':'false'}" ${disabled?'disabled':''}><span>${completed?'✓':setNumber}</span><small>Serie ${setNumber}</small></button>`;
+    }).join('');
+    return `<div class="set-tracker" data-index="${index}"><div class="set-tracker-head"><strong>Series realizadas</strong><span>${done}/${total}</span></div><div class="set-chips">${chips}</div></div>`;
+  };
 
   const entriesRoot=ctx.root.querySelector('#session-entries');
   entriesRoot.innerHTML=session.entries.map((entry,index)=>{
@@ -128,9 +242,22 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     const imageControl=ex?.imageDataUrl
       ? `<button type="button" class="btn small entry-image-button" aria-label="Ver imagen de ${escapeHtml(ex.name)}">Ver imagen</button>`
       : '<span class="badge entry-image-missing">Sin imagen</span>';
-    const isCompleted=!existing && completedIndexes.has(index);
-    const completeControl=existing?'':`<button type="button" class="entry-complete-toggle ${isCompleted?'completed':''}" aria-pressed="${isCompleted?'true':'false'}" title="Marcar ejercicio como realizado"><span class="check-icon">${isCompleted?'✓':'○'}</span><span class="check-label">${isCompleted?'Hecho':'Pendiente'}</span></button>`;
-    return `<div class="session-entry ${isCompleted?'completed':''}" data-index="${index}"><div class="entry-name"><div class="entry-title-row"><div class="entry-title-with-check">${completeControl}<strong>${escapeHtml(ex?.name||entry.exerciseNameSnapshot)}</strong></div>${imageControl}</div><small>${escapeHtml(ex?.exerciseCode||entry.exerciseCodeSnapshot||'')} · ${escapeHtml(formatLoad(ex||entry,{withBasis:true}))}</small></div><label class="load-field">${label}<div class="load-with-unit ${weighted?'':'single'}"><input class="entry-load" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[0-9]*[\\.,]?[0-9]*" ${isBody||entry.loadMode==='untracked'?'disabled':''} value="${displayValue??(entry.loadMode==='bodyweight_plus_kg'?0:'')}">${unitSelect}</div></label><label class="sets">Series<input class="entry-sets" type="number" min="1" max="30" value="${entry.sets??3}"></label><label class="reps">Reps<input class="entry-reps" type="number" min="1" max="200" value="${entry.reps??12}"></label></div>`;
+    const done=!existing ? Math.min(targetSets(entry),Number(completedSetCounts[index])||0) : 0;
+    const isCompleted=!existing && done>=targetSets(entry);
+    const inProgress=!existing && done>0 && !isCompleted;
+    return `<div class="session-entry ${isCompleted?'completed':''} ${inProgress?'in-progress':''}" data-index="${index}">
+      <div class="entry-name">
+        <div class="entry-title-row">
+          <div class="entry-title-block"><span class="exercise-index">Ejercicio ${index+1}</span><strong>${escapeHtml(ex?.name||entry.exerciseNameSnapshot)}</strong></div>
+          ${imageControl}
+        </div>
+        <small>${escapeHtml(ex?.exerciseCode||entry.exerciseCodeSnapshot||'')} · ${escapeHtml(formatLoad(ex||entry,{withBasis:true}))}</small>
+      </div>
+      <label class="load-field">${label}<div class="load-with-unit ${weighted?'':'single'}"><input class="entry-load" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[0-9]*[\\.,]?[0-9]*" ${isBody||entry.loadMode==='untracked'?'disabled':''} value="${displayValue??(entry.loadMode==='bodyweight_plus_kg'?0:'')}">${unitSelect}</div></label>
+      <label class="sets">${existing?'Series':'Series objetivo'}<input class="entry-sets" type="number" min="1" max="30" value="${entry.sets??3}"></label>
+      <label class="reps">Reps<input class="entry-reps" type="number" min="1" max="200" value="${entry.reps??12}"></label>
+      ${setTrackerHtml(entry,index)}
+    </div>`;
   }).join('');
 
   entriesRoot.querySelectorAll('.entry-image-button').forEach(button=>button.addEventListener('click',()=>{
@@ -170,18 +297,42 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
       }
       entry.sets=Number(row.querySelector('.entry-sets')?.value||3);
       entry.reps=Number(row.querySelector('.entry-reps')?.value||12);
+      if(!existing){
+        const total=targetSets(entry);
+        completedSetCounts[i]=Math.max(0,Math.min(total,Number(completedSetCounts[i])||0));
+      }
     });
   };
 
   const form=ctx.root.querySelector('#session-form');
   let draftTimer=null;
   let draftSaveChain=Promise.resolve();
+  let restTickTimer=null;
+  let restFinishedNotified=false;
+
+  const completedIndexesNow=()=>session.entries.reduce((indexes,entry,index)=>{
+    if((Number(completedSetCounts[index])||0)>=targetSets(entry)) indexes.push(index);
+    return indexes;
+  },[]);
 
   const updateProgress=()=>{
     if(existing)return;
-    const valid=[...completedIndexes].filter(index=>index>=0&&index<totalEntries);
     const progress=ctx.root.querySelector('#session-progress');
-    if(progress) progress.textContent=`${new Set(valid).size}/${totalEntries} completados`;
+    if(progress) progress.textContent=`${completedIndexesNow().length}/${totalEntries} completados`;
+  };
+
+  const refreshSetTracker=(index)=>{
+    if(existing)return;
+    const row=entriesRoot.querySelector(`.session-entry[data-index="${index}"]`);
+    const entry=session.entries[index];
+    if(!row||!entry)return;
+    const total=targetSets(entry);
+    const done=Math.max(0,Math.min(total,Number(completedSetCounts[index])||0));
+    completedSetCounts[index]=done;
+    row.classList.toggle('completed',done>=total);
+    row.classList.toggle('in-progress',done>0&&done<total);
+    const tracker=row.querySelector('.set-tracker');
+    if(tracker) tracker.outerHTML=setTrackerHtml(entry,index);
   };
 
   const captureFormState=()=>{
@@ -197,8 +348,17 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     if(existing)return Promise.resolve();
     captureFormState();
     const snapshot={...session,entries:session.entries.map(entry=>({...entry}))};
-    const completed=[...completedIndexes];
-    draftSaveChain=draftSaveChain.catch(()=>{}).then(()=>saveActiveSessionDraft({session:snapshot,startedAt,completedIndexes:completed}));
+    const completed=completedIndexesNow();
+    const counts={...completedSetCounts};
+    const timer=restTimerState?{...restTimerState}:null;
+    draftSaveChain=draftSaveChain.catch(()=>{}).then(()=>saveActiveSessionDraft({
+      session:snapshot,
+      startedAt,
+      completedIndexes:completed,
+      completedSetCounts:counts,
+      restTimer:timer,
+      restSeconds:restSecondsTotal,
+    }));
     return draftSaveChain.catch(error=>console.warn('No se pudo guardar el borrador de sesión:',error));
   };
 
@@ -208,29 +368,151 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     draftTimer=setTimeout(()=>{ persistDraft(); },180);
   };
 
+  const restPanel=ctx.root.querySelector('#rest-timer-panel');
+  const restValue=ctx.root.querySelector('#rest-timer-value');
+  const restContext=ctx.root.querySelector('#rest-timer-context');
+
+  const clearRestTick=()=>{
+    if(restTickTimer){ clearInterval(restTickTimer); restTickTimer=null; }
+  };
+
+  const hideRestTimer=()=>{
+    if(restPanel) restPanel.hidden=true;
+    clearRestTick();
+  };
+
+  const finishRestTimer=()=>{
+    if(!restTimerState)return;
+    restTimerState=null;
+    hideRestTimer();
+    if(!restFinishedNotified){
+      restFinishedNotified=true;
+      soundRestFinished();
+      ctx.toast('Descanso terminado. Toca la siguiente serie.','ok');
+    }
+    void persistDraft();
+  };
+
+  const updateRestTimer=()=>{
+    if(!restTimerState?.endsAt){ hideRestTimer(); return; }
+    const endsAt=Date.parse(restTimerState.endsAt);
+    if(!Number.isFinite(endsAt)){ restTimerState=null; hideRestTimer(); return; }
+    const remaining=Math.ceil((endsAt-Date.now())/1000);
+    if(remaining<=0){ finishRestTimer(); return; }
+    if(restPanel) restPanel.hidden=false;
+    if(restValue) restValue.textContent=formatCountdown(remaining);
+    if(restContext){
+      const entry=session.entries[Number(restTimerState.entryIndex)];
+      restContext.textContent=`${entry?.exerciseNameSnapshot||'Ejercicio'} · después de la serie ${Number(restTimerState.afterSet)||''}`;
+    }
+  };
+
+  const armRestTick=()=>{
+    clearRestTick();
+    updateRestTimer();
+    if(restTimerState) restTickTimer=setInterval(updateRestTimer,250);
+  };
+
+  const cancelRestTimer=({save=true}={})=>{
+    restTimerState=null;
+    restFinishedNotified=false;
+    hideRestTimer();
+    if(save) void persistDraft();
+  };
+
+  const startRestTimer=async(index,afterSet)=>{
+    if(restSecondsTotal<=0){ cancelRestTimer({save:false}); return; }
+    await primeRestAudio();
+    restFinishedNotified=false;
+    restTimerState={
+      endsAt:new Date(Date.now()+restSecondsTotal*1000).toISOString(),
+      durationSeconds:restSecondsTotal,
+      entryIndex:index,
+      afterSet,
+    };
+    armRestTick();
+  };
+
   if(!existing){
-    entriesRoot.querySelectorAll('.entry-complete-toggle').forEach(button=>button.addEventListener('click',()=>{
-      const row=button.closest('.session-entry');
-      const index=Number(row.dataset.index);
-      if(completedIndexes.has(index)) completedIndexes.delete(index); else completedIndexes.add(index);
-      const completed=completedIndexes.has(index);
-      row.classList.toggle('completed',completed);
-      button.classList.toggle('completed',completed);
-      button.setAttribute('aria-pressed',completed?'true':'false');
-      button.querySelector('.check-icon').textContent=completed?'✓':'○';
-      button.querySelector('.check-label').textContent=completed?'Hecho':'Pendiente';
+    entriesRoot.addEventListener('click',async event=>{
+      const chip=event.target.closest('.set-chip');
+      if(!chip||chip.disabled)return;
+      const tracker=chip.closest('.set-tracker');
+      const row=chip.closest('.session-entry');
+      const index=Number(tracker?.dataset.index ?? row?.dataset.index);
+      const entry=session.entries[index];
+      if(!entry)return;
+      syncEntries();
+      const total=targetSets(entry);
+      const current=Math.max(0,Math.min(total,Number(completedSetCounts[index])||0));
+      const selected=Number(chip.dataset.set);
+      let next=current;
+      let advanced=false;
+
+      if(selected===current+1){
+        next=selected;
+        advanced=true;
+      } else if(selected<=current){
+        next=Math.max(0,selected-1);
+      } else {
+        return;
+      }
+
+      completedSetCounts[index]=next;
+      if(advanced){
+        if(next<total) await startRestTimer(index,next);
+        else cancelRestTimer({save:false});
+      } else if(restTimerState && Number(restTimerState.entryIndex)===index && Number(restTimerState.afterSet)>next){
+        cancelRestTimer({save:false});
+      }
+      refreshSetTracker(index);
       updateProgress();
-      persistDraft();
-    }));
+      await persistDraft();
+    });
+
+    entriesRoot.addEventListener('change',event=>{
+      const setsInput=event.target.closest('.entry-sets');
+      if(!setsInput)return;
+      const row=setsInput.closest('.session-entry');
+      const index=Number(row?.dataset.index);
+      syncEntries();
+      refreshSetTracker(index);
+      updateProgress();
+      void persistDraft();
+    });
+
+    const restMinutesInput=ctx.root.querySelector('#rest-minutes');
+    const restSecondsInput=ctx.root.querySelector('#rest-seconds');
+    const updateRestDuration=async()=>{
+      let minutes=Math.max(0,Math.min(59,Number(restMinutesInput?.value)||0));
+      let seconds=Math.max(0,Math.min(59,Number(restSecondsInput?.value)||0));
+      minutes=Math.floor(minutes);
+      seconds=Math.floor(seconds);
+      if(restMinutesInput) restMinutesInput.value=String(minutes);
+      if(restSecondsInput) restSecondsInput.value=String(seconds);
+      restSecondsTotal=minutes*60+seconds;
+      await setSetting('sessionRestSeconds',restSecondsTotal);
+      await persistDraft();
+    };
+    restMinutesInput?.addEventListener('change',updateRestDuration);
+    restSecondsInput?.addEventListener('change',updateRestDuration);
+    ctx.root.querySelector('#cancel-rest-timer')?.addEventListener('click',()=>cancelRestTimer());
+
     form.addEventListener('input',scheduleDraftSave);
-    form.addEventListener('change',()=>{ clearTimeout(draftTimer); void persistDraft(); });
+    form.addEventListener('change',event=>{
+      if(event.target.matches('#rest-minutes,#rest-seconds,.entry-sets'))return;
+      clearTimeout(draftTimer);
+      void persistDraft();
+    });
     updateProgress();
     await persistDraft();
+
+    if(restTimerState?.endsAt) armRestTick();
 
     ctx.setNavigationGuard(async()=>{
       await persistDraft();
       const body=document.createElement('div');
-      body.innerHTML='<p>Hay una sesión en curso. Si sales ahora, GymLedger conservará el borrador, la hora de inicio, las cargas y los ejercicios marcados.</p><p class="muted small">Puedes continuarla después desde Inicio o Sesiones.</p>';
+      body.innerHTML='<p>Hay una sesión en curso. Si sales ahora, GymLedger conservará el borrador, la hora de inicio, las cargas y el avance de cada serie.</p><p class="muted small">Puedes continuarla después desde Inicio o Sesiones.</p>';
       const answer=await ctx.modal({
         title:'¿Salir de la sesión?',
         body,
@@ -240,6 +522,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
           {label:'Salir y conservar',value:true},
         ],
       });
+      if(answer===true) clearRestTick();
       return answer===true;
     });
   }
@@ -251,6 +534,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
       await saveSession({...session,source:existing?session.source:'manual'},{advancePlan:!existing});
       if(!existing){
         clearTimeout(draftTimer);
+        clearRestTick();
         await clearActiveSessionDraft();
         ctx.clearNavigationGuard();
       }
@@ -272,6 +556,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     });
     if(!ok)return;
     clearTimeout(draftTimer);
+    clearRestTick();
     await clearActiveSessionDraft();
     ctx.clearNavigationGuard();
     ctx.toast('Sesión cancelada.','ok');

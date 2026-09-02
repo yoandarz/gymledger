@@ -1,12 +1,14 @@
-GYMLEDGER 2.0.8 · PUBLICACIÓN
+GYMLEDGER 2.0.9 · PUBLICACIÓN
 
-1. El proyecto compartido de Supabase ya está configurado; 2.0.8 no requiere ejecutar SQL nuevo.
+1. El proyecto compartido de Supabase ya está configurado; 2.0.9 no requiere ejecutar SQL nuevo.
 2. La Project URL y la Publishable Key siguen incorporadas en js/cloud-config.js.
-3. Usa el ZIP separado GymLedger_2.0.8_GitHub_Pages.zip.
-4. Sube EL CONTENIDO del ZIP a la raíz del repositorio (index.html debe quedar en la raíz).
-5. GitHub Pages: Deploy from a branch → main → /(root).
-6. La app 2.0.7 debe detectar VERSION.txt=2.0.8 y mostrar «Nueva actualización disponible»; pulsa «Actualizar ahora».
-7. Comprueba que la cabecera muestra v2.0.8.
-8. Prueba en móvil una sesión real: cambia cargas, marca ejercicios como Hecho, intenta salir, vuelve a entrar y confirma que hora/progreso/valores sobreviven.
-9. Comprueba Cancelar sesión (borra borrador) y Guardar sesión (crea historial, actualiza referencias y elimina borrador).
-10. Verifica login, sincronización normal y apertura offline. El borrador activo es local y no se envía a Supabase hasta guardar la sesión histórica.
+3. Publica el contenido de esta versión en la raíz del repositorio (index.html debe quedar en la raíz).
+4. GitHub Pages: Deploy from a branch → main → /(root).
+5. La app 2.0.8 debe detectar VERSION.txt=2.0.9 y mostrar «Nueva actualización disponible»; pulsa «Actualizar ahora».
+6. Comprueba que la cabecera muestra v2.0.9.
+7. Prueba en móvil una sesión real: cada ejercicio debe verse como una tarjeta separada; marca las series una por una y confirma que el ejercicio solo se pone verde al completar la última.
+8. Comprueba el descanso automático: al marcar una serie que no sea la última debe iniciar la cuenta atrás; al llegar a 0 debe emitir aviso sonoro/vibración cuando el navegador lo permita. La última serie no inicia descanso.
+9. Cambia la duración del descanso y confirma que el valor se conserva en el dispositivo y en el borrador de la sesión.
+10. Sal de una sesión en curso y vuelve a entrar: deben sobrevivir hora, cargas, series marcadas y un descanso todavía activo.
+11. Edita y guarda una rutina sincronizada: no debe aparecer una nueva rutina «(copia por conflicto)».
+12. Comprueba Cancelar sesión, Guardar sesión, login, sincronización normal y apertura offline. El borrador activo sigue siendo local y no se envía a Supabase hasta guardar la sesión histórica.
