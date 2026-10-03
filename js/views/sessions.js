@@ -6,6 +6,7 @@ import { clearActiveSessionDraft, draftProgress, getActiveSessionDraft, saveActi
 import { escapeHtml, formatDateTime, formatLoad, kgToUnit, numberOrNull, safeJsonParse, unitToKg } from '../utils.js';
 
 const DEFAULT_REST_SECONDS = 90;
+const REST_ALARM_GAIN = 0.42;
 let restAudioContext = null;
 
 function sessionRow(session) {
@@ -72,7 +73,7 @@ function soundRestFinished() {
       const gain = restAudioContext.createGain();
       oscillator.frequency.setValueAtTime(880, now + offset);
       gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(REST_ALARM_GAIN, now + offset + 0.015);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
       oscillator.connect(gain);
       gain.connect(restAudioContext.destination);
@@ -179,8 +180,19 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
 
   ctx.root.innerHTML=`
     <div class="page-head"><div><h1>${existing?'Sesión':'Nueva sesión'} · ${escapeHtml(session.routineNameSnapshot||routine?.name||'')}</h1><p>${existing?'Puedes corregir un registro histórico.':'Marca cada serie al terminarla. GymLedger contará las series y controlará automáticamente el descanso.'}</p></div></div>
-    <form id="session-form" class="card flat" autocomplete="off">
+    <form id="session-form" class="card flat ${existing?'':'session-active-form'}" autocomplete="off">
       ${existing?'':`
+        <div class="session-floating-status" id="session-floating-status" role="status" aria-live="polite">
+          <div class="session-floating-item">
+            <span>Ejercicios</span>
+            <strong id="session-floating-progress">0/${totalEntries}</strong>
+          </div>
+          <div class="session-floating-divider" aria-hidden="true"></div>
+          <div class="session-floating-item session-floating-rest">
+            <span>Descanso</span>
+            <strong id="session-floating-rest">—</strong>
+          </div>
+        </div>
         <div class="active-session-status">
           <div><span class="badge ok">Borrador automático</span><strong>Inicio · ${escapeHtml(formatDateTime(startedAt))}</strong></div>
           <strong id="session-progress">0/${totalEntries} completados</strong>
@@ -317,8 +329,11 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
 
   const updateProgress=()=>{
     if(existing)return;
+    const completed=completedIndexesNow().length;
     const progress=ctx.root.querySelector('#session-progress');
-    if(progress) progress.textContent=`${completedIndexesNow().length}/${totalEntries} completados`;
+    const floatingProgress=ctx.root.querySelector('#session-floating-progress');
+    if(progress) progress.textContent=`${completed}/${totalEntries} completados`;
+    if(floatingProgress) floatingProgress.textContent=`${completed}/${totalEntries}`;
   };
 
   const refreshSetTracker=(index)=>{
@@ -371,6 +386,11 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
   const restPanel=ctx.root.querySelector('#rest-timer-panel');
   const restValue=ctx.root.querySelector('#rest-timer-value');
   const restContext=ctx.root.querySelector('#rest-timer-context');
+  const floatingRestValue=ctx.root.querySelector('#session-floating-rest');
+
+  const setFloatingRest=(value='—')=>{
+    if(floatingRestValue) floatingRestValue.textContent=value;
+  };
 
   const clearRestTick=()=>{
     if(restTickTimer){ clearInterval(restTickTimer); restTickTimer=null; }
@@ -378,6 +398,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
 
   const hideRestTimer=()=>{
     if(restPanel) restPanel.hidden=true;
+    setFloatingRest('—');
     clearRestTick();
   };
 
@@ -399,8 +420,10 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     if(!Number.isFinite(endsAt)){ restTimerState=null; hideRestTimer(); return; }
     const remaining=Math.ceil((endsAt-Date.now())/1000);
     if(remaining<=0){ finishRestTimer(); return; }
+    const formatted=formatCountdown(remaining);
     if(restPanel) restPanel.hidden=false;
-    if(restValue) restValue.textContent=formatCountdown(remaining);
+    if(restValue) restValue.textContent=formatted;
+    setFloatingRest(formatted);
     if(restContext){
       const entry=session.entries[Number(restTimerState.entryIndex)];
       restContext.textContent=`${entry?.exerciseNameSnapshot||'Ejercicio'} · después de la serie ${Number(restTimerState.afterSet)||''}`;
@@ -508,6 +531,7 @@ export async function renderSessionEditor(ctx, routineId = null, sessionId = nul
     await persistDraft();
 
     if(restTimerState?.endsAt) armRestTick();
+    else setFloatingRest('—');
 
     ctx.setNavigationGuard(async()=>{
       await persistDraft();
