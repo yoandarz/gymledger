@@ -1,11 +1,12 @@
-import { archiveRecord, deleteRecord, getRoutine, listRecords, saveRoutine } from '../gym-service.js';
+import { archiveRecord, deleteRecord, getRoutine, listRecords, saveRoutine, saveRoutineVariant } from '../gym-service.js';
 import { escapeHtml, formatLoad } from '../utils.js';
 
-function routineRow(routine, exMap) {
+function routineRow(routine, exMap, inCurrentPlan = false) {
   const names = routine.exerciseItems.slice(0,4).map(item => exMap.get(item.exerciseId)?.name).filter(Boolean);
   return `<div class="list-row">
     <div class="list-main"><strong>${escapeHtml(routine.name)}</strong><small>${routine.exerciseItems.length} ejercicios${names.length ? ` · ${escapeHtml(names.join(' · '))}${routine.exerciseItems.length>4?'…':''}` : ''}</small></div>
     ${routine.archivedAt ? '<span class="badge warn">Archivada</span>' : ''}
+    ${inCurrentPlan ? '<span class="badge brand">En plan actual</span>' : '<span class="badge">En biblioteca</span>'}
     <div class="row-actions"><a class="btn small" href="#routine-edit/${routine.id}">Editar</a><a class="btn small primary" href="#session-new/${routine.id}">Entrenar</a></div>
   </div>`;
 }
@@ -14,10 +15,12 @@ export async function renderRoutines(ctx) {
   const showArchived = ctx.route.query.get('archived') === '1';
   const routines = (await listRecords('routine',{includeArchived:true})).filter(r => showArchived ? r.archivedAt : !r.archivedAt);
   const exMap = new Map((await listRecords('exercise',{includeArchived:true})).map(ex=>[ex.id,ex]));
+  const plan = (await listRecords('plan')).find(p => p.active);
+  const activeRoutineIds = new Set(plan?.routineIds || []);
   ctx.root.innerHTML = `
     <div class="page-head"><div><h1>Rutinas</h1><p>Una rutina es una sesión tipo: ejercicios, orden y objetivos de series/repeticiones.</p></div><div class="page-actions"><a class="btn primary" href="#routines/new">+ Nueva rutina</a></div></div>
     <div class="toolbar"><a class="btn small" href="#routines${showArchived?'':'?archived=1'}">${showArchived?'Ver activas':'Ver archivadas'}</a></div>
-    <div class="list">${routines.length?routines.map(r=>routineRow(r,exMap)).join(''):'<div class="empty">No hay rutinas en esta vista.</div>'}</div>`;
+    <div class="list">${routines.length?routines.map(r=>routineRow(r,exMap,activeRoutineIds.has(r.id))).join(''):'<div class="empty">No hay rutinas en esta vista.</div>'}</div>`;
 }
 
 export async function renderRoutineEditor(ctx, id) {
@@ -80,7 +83,24 @@ export async function renderRoutineEditor(ctx, id) {
     event.preventDefault(); syncItemValues();
     if(!items.length){ctx.toast('Añade al menos un ejercicio.','error');return;}
     try{
-      const saved=await saveRoutine({id:existing?.id,name:form.name.value,description:form.description.value,defaultSets:Number(form.defaultSets.value||3),defaultReps:Number(form.defaultReps.value||12),exerciseItems:items.map((item,order)=>({...item,order})),archivedAt:existing?.archivedAt||null});
+      const input={id:existing?.id,name:form.name.value,description:form.description.value,defaultSets:Number(form.defaultSets.value||3),defaultReps:Number(form.defaultReps.value||12),exerciseItems:items.map((item,order)=>({...item,order})),archivedAt:existing?.archivedAt||null};
+      const activePlan=(await listRecords('plan')).find(plan=>plan.active);
+      const inActivePlan=Boolean(existing && activePlan?.routineIds.includes(existing.id));
+      if(inActivePlan){
+        const choice=await ctx.modal({
+          title:'¿Sustituir rutina en el plan actual?',
+          body:'<p>Si sustituyes, la rutina anterior seguirá en la biblioteca. El historial de cada ejercicio se conserva siempre.</p>',
+          actions:[
+            {label:'Cancelar',value:'cancel'},
+            {label:'Solo biblioteca',value:'library'},
+            {label:'Sí, sustituir',value:'replace',className:'primary'},
+          ],
+        });
+        if(!choice || choice==='cancel')return;
+        await saveRoutineVariant(input,{replaceInActivePlan:choice==='replace'});
+      }else{
+        await saveRoutine(input);
+      }
       ctx.toast('Rutina guardada.','ok'); await ctx.afterWrite(); ctx.navigate('routines');
     }catch(error){ctx.toast(error.message,'error');}
   });

@@ -1,0 +1,27 @@
+GYMLEDGER 2.0.12 — ARCHIVOS PARA SUBIR A GITHUB
+
+Este ZIP contiene los SEIS ARCHIVOS COMPLETOS QUE CAMBIAN, no un parche.
+No borres los demás archivos del repositorio.
+
+SUBIDA: en github.com/yoandarz/gymledger, conserva estructura de carpetas:
+  index.html                 -> raíz
+  VERSION.txt                -> raíz
+  service-worker.js          -> raíz
+  js/constants.js            -> carpeta js
+  js/gym-service.js          -> carpeta js
+  js/views/routines.js       -> carpeta js/views
+
+Sube estos seis archivos reemplazando los originales. No subas LEEME_SUBIDA.txt si no lo deseas.
+
+ANTES: desde Ajustes de GymLedger exporta una copia JSON completa de la base.
+DESPUÉS: en móvil y ordenador, abre la app en línea, actualiza la versión,
+verifica que aparezca 2.0.12 y prueba editar una rutina perteneciente al plan activo.
+Deberían mostrarse las opciones Cancelar, Solo biblioteca y Sí, sustituir.
+
+Los ejercicios conservan el mismo ID, de modo que su historial no depende del cambio de rutina.
+Las copias por conflicto antiguas no son borradas automáticamente.
+La sustitución de rutina + plan usa una operación IndexedDB conjunta, aunque
+la sincronización con Supabase sigue siendo eventual (no transacción distribuida).
+
+NOTA: solo se incluyen archivos de reemplazo; no elimines los demás archivos de GitHub.
+No se han realizado pruebas E2E contra tu cuenta Supabase.

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gymledger-shell-v2.0.11';
+const CACHE_NAME = 'gymledger-shell-v2.0.12';
 const SHELL = [
   './','./index.html','./offline.html','./manifest.webmanifest','./css/styles.css','./css/session-2.0.11.css',
   './js/app.js','./js/constants.js','./js/utils.js','./js/db.js','./js/session-draft.js','./js/schema.js','./js/seed-data.js','./js/exercise-catalog.js',

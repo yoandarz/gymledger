@@ -65,6 +65,39 @@ export async function saveRoutine(input) {
   return record;
 }
 
+// Crea una variante de la rutina. El plan activo apunta a la variante nueva,
+// pero la rutina original y los IDs de ejercicios permanecen intactos.
+// La escritura conjunta impide que falle a medias la sustitución local.
+export async function saveRoutineVariant(input, { replaceInActivePlan = false } = {}) {
+  const original = input.id ? await getRecord(input.id) : null;
+  if (!original || original.type !== 'routine' || original._sync?.deleted) {
+    throw new Error('Rutina original no encontrada.');
+  }
+  const plans = await listRecords('plan');
+  const activePlan = plans.find(plan => plan.active && plan.routineIds.includes(original.id));
+  if (replaceInActivePlan && !activePlan) {
+    throw new Error('La rutina ya no figura en el plan activo. Actualiza la pantalla.');
+  }
+  const { id: _previousId, ...fields } = input;
+  const variant = normalizeRecord({
+    ...fields,
+    id: uuid(), type: 'routine', archivedAt: null,
+    createdAt: nowIso(), updatedAt: nowIso(),
+    _sync: { dirty: true, deleted: false, syncedServerUpdatedAt: null, seed: false },
+  });
+  const errors = validateRecord(variant);
+  if (errors.length) throw new Error(errors.join(' '));
+  if (replaceInActivePlan) {
+    const updatedPlan = cloneAsDirty(activePlan, {
+      routineIds: activePlan.routineIds.map(id => id === original.id ? variant.id : id),
+    });
+    await putRecords([variant, updatedPlan]);
+  } else {
+    await putRecord(variant);
+  }
+  return variant;
+}
+
 export async function savePlan(input) {
   const existing = input.id ? await getRecord(input.id) : null;
   let record = normalizeRecord({
