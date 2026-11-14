@@ -1,5 +1,6 @@
 import { archiveRecord, deleteRecord, getRoutine, listRecords, saveRoutine, saveRoutineVariant } from '../gym-service.js';
 import { escapeHtml, formatLoad } from '../utils.js';
+import { exerciseFilterControls, wireExerciseFilters } from '../exercise-search.js';
 
 function routineRow(routine, exMap, inCurrentPlan = false) {
   const names = routine.exerciseItems.slice(0,4).map(item => exMap.get(item.exerciseId)?.name).filter(Boolean);
@@ -40,7 +41,9 @@ export async function renderRoutineEditor(ctx, id) {
         <label>Repeticiones predeterminadas<input name="defaultReps" type="number" min="1" max="100" value="${routine.defaultReps||12}"></label>
       </div>
       <div class="form-section"><div class="card-head"><div><h3>Ejercicios</h3><p class="muted small">Puedes cambiar series y repeticiones para un ejercicio concreto.</p></div></div>
-        <div class="toolbar"><select id="add-exercise"><option value="">Añadir ejercicio…</option>${exercises.map(ex=>`<option value="${ex.id}">${escapeHtml(ex.exerciseCode||'—')} · ${escapeHtml(ex.name)}</option>`).join('')}</select><button type="button" class="btn" id="add-exercise-btn">Añadir</button></div>
+        ${exerciseFilterControls('routine-exercise')}
+        <p id="routine-exercise-results" class="muted small" aria-live="polite"></p>
+        <div class="toolbar"><select id="add-exercise" aria-label="Ejercicio a añadir"><option value="">Selecciona un ejercicio…</option></select><button type="button" class="btn" id="add-exercise-btn">Añadir</button></div>
         <div id="routine-items" class="drag-list"></div>
       </div>
       <div class="form-actions">
@@ -48,6 +51,17 @@ export async function renderRoutineEditor(ctx, id) {
         <a class="btn" href="#routines">Cancelar</a><button class="btn primary" type="submit">Guardar rutina</button>
       </div>
     </form>`;
+
+  const addExerciseSelect = ctx.root.querySelector('#add-exercise');
+  const resultCount = ctx.root.querySelector('#routine-exercise-results');
+  wireExerciseFilters(ctx.root, 'routine-exercise', exercises, filtered => {
+    const previous = addExerciseSelect.value;
+    addExerciseSelect.innerHTML = '<option value="">Selecciona un ejercicio…</option>' +
+      filtered.map(ex => `<option value="${escapeHtml(ex.id)}">${escapeHtml(ex.exerciseCode || 'ID local')} · ${escapeHtml(ex.name)}</option>`).join('');
+    if (filtered.some(ex => ex.id === previous)) addExerciseSelect.value = previous;
+    resultCount.textContent = `${filtered.length} de ${exercises.length} ejercicios disponibles`;
+    addExerciseSelect.disabled = filtered.length === 0;
+  });
 
   const itemsRoot = ctx.root.querySelector('#routine-items');
   const renderItems = () => {

@@ -2,6 +2,7 @@ import { IMAGE_MAX_BYTES, LOAD_BASES, LOAD_MODES, WEIGHT_UNITS } from '../consta
 import { archiveRecord, deleteRecord, getExercise, getExerciseHistory, listRecords, saveExercise } from '../gym-service.js';
 import { escapeHtml, formatDate, formatLoad, formatNumber, kgToUnit, shortId, unitToKg } from '../utils.js';
 import { EQUIPMENT_GROUPS, EXERCISE_CATALOG, EXERCISE_CATEGORIES, MUSCLE_ZONES } from '../exercise-catalog.js';
+import { exerciseFilterControls, wireExerciseFilters } from '../exercise-search.js';
 
 function exerciseCard(ex) {
   const muscles = [...(ex.primaryMuscles || []), ...(ex.secondaryMuscles || [])].slice(0,4);
@@ -21,30 +22,22 @@ function exerciseCard(ex) {
 export async function renderExercises(ctx) {
   const all = await listRecords('exercise', { includeArchived: true });
   const showArchived = ctx.route.query.get('archived') === '1';
-  const exercises = all.filter(ex => showArchived ? Boolean(ex.archivedAt) : !ex.archivedAt)
-    .sort((a,b) => String(a.exerciseCode || 'ZZZ').localeCompare(String(b.exerciseCode || 'ZZZ')));
+  const exercises = all.filter(ex => showArchived ? Boolean(ex.archivedAt) : !ex.archivedAt);
 
   ctx.root.innerHTML = `
     <div class="page-head">
       <div><h1>Ejercicios</h1><p>Una ficha por movimiento real. El historial sigue al ejercicio aunque cambies de rutina o de plan.</p></div>
       <div class="page-actions"><a class="btn primary" href="#exercises/new">+ Nuevo ejercicio</a></div>
     </div>
-    <div class="toolbar">
-      <div class="search"><input id="exercise-search" placeholder="Buscar por nombre, músculo, equipo o código" autocomplete="off"></div>
-      <a class="btn small" href="#exercises${showArchived ? '' : '?archived=1'}">${showArchived ? 'Ver activos' : 'Ver archivados'}</a>
-    </div>
-    <div id="exercise-grid" class="grid two">
-      ${exercises.length ? exercises.map(exerciseCard).join('') : '<div class="empty">No hay ejercicios en esta vista.</div>'}
-    </div>`;
+    <div class="toolbar"><a class="btn small" href="#exercises${showArchived ? '' : '?archived=1'}">${showArchived ? 'Ver activos' : 'Ver archivados'}</a></div>
+    ${exerciseFilterControls('library-exercise')}
+    <p id="exercise-results" class="muted small" aria-live="polite"></p>
+    <div id="exercise-grid" class="grid two"></div>`;
 
-  const input = ctx.root.querySelector('#exercise-search');
   const grid = ctx.root.querySelector('#exercise-grid');
-  input?.addEventListener('input', () => {
-    const q = input.value.trim().toLocaleLowerCase('es');
-    const filtered = exercises.filter(ex => {
-      const haystack = [ex.exerciseCode, ex.name, ...(ex.primaryMuscles||[]), ...(ex.secondaryMuscles||[]), ...(ex.equipment||[])].join(' ').toLocaleLowerCase('es');
-      return haystack.includes(q);
-    });
+  const results = ctx.root.querySelector('#exercise-results');
+  wireExerciseFilters(ctx.root, 'library-exercise', exercises, filtered => {
+    results.textContent = `${filtered.length} de ${exercises.length} ejercicios`;
     grid.innerHTML = filtered.length ? filtered.map(exerciseCard).join('') : '<div class="empty">No hay coincidencias.</div>';
   });
 }

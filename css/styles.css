@@ -299,3 +299,10 @@ label small { font-weight:500; color:var(--muted); }
   .entry-title-with-check { width:100%; align-items:flex-start; }
   .entry-complete-toggle { min-width:88px; justify-content:center; }
 }
+
+/* Búsqueda y filtros para la biblioteca y el selector de ejercicios. */
+.exercise-filters { display:grid; grid-template-columns:minmax(180px,2fr) repeat(2,minmax(160px,1fr)); gap:10px; margin:0 0 12px; align-items:end; }
+.exercise-filters label { min-width:0; display:flex; flex-direction:column; gap:5px; font-size:.88rem; }
+.exercise-filters input,.exercise-filters select { min-width:0; width:100%; }
+@media (max-width:820px) { .exercise-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } .exercise-filter-search { grid-column:1/-1; } }
+@media (max-width:480px) { .exercise-filters { grid-template-columns:1fr; } .exercise-filter-search { grid-column:auto; } }
